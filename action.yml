@@ -1,16 +1,25 @@
-name: GitHub Enterprise Invitation Action
+name: GitHub Enterprise Invitation Report Action
+description: 'An Action to generate a report to retrieve pending and failed invitations for a GitHub cloud enterprise or organization.'
 
 inputs:
   token:
+    description: A repo, read:org and read:enterprise personal access token
     required: true
   org:
+    description: Organization different than workflow context  
     required: false
   enterprise: 
+    description: Enterprise slug, to retrieve invitations for the entire enterprise
     required: false
   sort:
-    # Sort by: login, email, state, created_at, failed_at, inviter, entOrg
+    description: 'CSV column used to sort generated report'
     required: false
-    default: 'created_at'
+  sort-order:
+    description: 'CSV sort order by key column for generated report'
+    required: false
+  json:
+    description: 'Generate optional report in JSON format'
+    required: false
   committer-name:
     description: 'The name of the committer that will appear in the Git history'
     default: 'github-actions'
@@ -24,3 +33,6 @@ runs:
   using: 'node16'
   main: 'dist/index.js'
   
+branding:
+  icon: 'list'
+  color: 'blue'
