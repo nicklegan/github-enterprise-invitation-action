@@ -1,29 +1,42 @@
 const core = require('@actions/core')
 const github = require('@actions/github')
 const { stringify } = require('csv-stringify/sync')
-const arraySort = require('array-sort')
+const { orderBy } = require('natural-orderby')
 const token = core.getInput('token', { required: true })
 const octokit = github.getOctokit(token)
 const eventPayload = require(process.env.GITHUB_EVENT_PATH)
-const org = core.getInput('org', { required: false }) || eventPayload.organization.login
 const { owner, repo } = github.context.repo
+
+const org = core.getInput('org', { required: false }) || eventPayload.organization.login
 const committerName = core.getInput('committer-name', { required: false }) || 'github-actions'
 const committerEmail = core.getInput('committer-email', { required: false }) || 'github-actions@github.com'
 const enterprise = core.getInput('enterprise', { required: false }) || ''
+const jsonExport = core.getInput('json', { required: false }) || 'false'
+const sortOrder = core.getInput('sort-order', { required: false }) || 'desc'
+const sortColumn = core.getInput('sort', { required: false }) || 'created_at'
 
+// Orchestrator
 ;(async () => {
   try {
     const invites = []
     if (enterprise !== '') {
       await orgNames(invites)
       const reportPath = `reports/${enterprise}-invitations.csv`
+      const reportPathJson = `reports/${enterprise}-invitations.json`
       await report(invites, reportPath)
+      if (jsonExport === 'true') {
+        await jsonReport(invites, reportPathJson)
+      }
     } else {
       const entOrg = org
       await pendingInvites(entOrg, invites)
       await failedInvites(entOrg, invites)
       const reportPath = `reports/${org}-invitations.csv`
+      const reportPathJson = `reports/${org}-invitations.json`
       await report(invites, reportPath)
+      if (jsonExport === 'true') {
+        await jsonReport(invites, reportPathJson)
+      }
     }
   } catch (error) {
     core.setFailed(error.message)
@@ -122,7 +135,7 @@ async function failedInvites(entOrg, invites) {
   }
 }
 
-// Create and push report for all enterprise orgs
+// Format push CSV report
 async function report(invites, reportPath) {
   try {
     const columns = {
@@ -135,8 +148,7 @@ async function report(invites, reportPath) {
       entOrg: 'Org'
     }
 
-    const sortColumn = core.getInput('sort', { required: false }) || 'created_at'
-    const sortArray = arraySort(invites, sortColumn, { reverse: true })
+    const sortArray = orderBy(invites, [sortColumn], [sortOrder])
 
     const csv = stringify(sortArray, {
       header: true,
@@ -160,6 +172,39 @@ async function report(invites, reportPath) {
         owner,
         repo,
         path: reportPath
+      })
+
+      if (data && data.sha) {
+        opts.sha = data.sha
+      }
+    } catch (err) {}
+
+    await octokit.rest.repos.createOrUpdateFileContents(opts)
+  } catch (error) {
+    core.setFailed(error.message)
+  }
+}
+
+// Format and push JSON report
+async function jsonReport(invites, reportPathJson) {
+  try {
+    const opts = {
+      owner,
+      repo,
+      path: reportPathJson,
+      message: `${new Date().toISOString().slice(0, 10)} invitation report`,
+      content: Buffer.from(JSON.stringify(invites, null, 2)).toString('base64'),
+      committer: {
+        name: committerName,
+        email: committerEmail
+      }
+    }
+
+    try {
+      const { data } = await octokit.rest.repos.getContent({
+        owner,
+        repo,
+        path: reportPathJson
       })
 
       if (data && data.sha) {
